@@ -51,13 +51,25 @@ jobs:
           sh tools/wow-session-bridge/build.sh "$RUNNER_TEMP/$LLVM_MINGW/bin/aarch64-w64-mingw32-clang" \
             app/src/main/assets/wow-session-bridge.exe
 
-      # Keep the same debug key between runs so new APKs install over the previous one (cache can expire after ~7 idle days).
-      - name: Restore debug keystore
-        id: dbgkey
-        uses: actions/cache@v4
-        with:
-          path: ~/.android/debug.keystore
-          key: debug-keystore-v1
+      # A fixed throwaway key (stored as repo secrets) so each new APK installs over the previous one.
+      # Without the secrets, Gradle falls back to a random debug key.
+      - name: Set up debug signing
+        env:
+          KS_B64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+          KS_PASS: ${{ secrets.DEBUG_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KS_B64" ]; then
+            mkdir -p app/keystores
+            echo "$KS_B64" | base64 -d > app/keystores/debug.p12
+            {
+              echo "storeFile=keystores/debug.p12"
+              echo "storePassword=$KS_PASS"
+              echo "keyAlias=wowmali"
+              echo "keyPassword=$KS_PASS"
+            } > app/keystores/keystore.properties
+          else
+            echo "::warning::No DEBUG_KEYSTORE_BASE64 secret: using a random debug key"
+          fi
 
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
