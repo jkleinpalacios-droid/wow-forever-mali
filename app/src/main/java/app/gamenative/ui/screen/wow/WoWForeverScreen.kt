@@ -997,7 +997,7 @@ enum class GameRegion(val label: String) {
 
 /** The 16:9 render budget, before it's reshaped to the window's aspect ratio. Defaults to the GPU profile's size. */
 enum class RenderResolution(val size: String, val label: String) {
-    HD("1280x720", "720p"), HD_PLUS("1600x900", "900p"), FULL_HD("1920x1080", "1080p");
+    SD("960x540", "540p"), HD("1280x720", "720p"), HD_PLUS("1600x900", "900p"), FULL_HD("1920x1080", "1080p");
 
     companion object {
         private const val KEY_RESOLUTION = "resolution"
@@ -1294,14 +1294,17 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
     }
 
     if (gpu.mali) {
-        // Experimental profile: write Wine's debug output to <external files>/wine_logs/wine_debug.log.
-        PrefManager.enableWineDebug = true
-        PrefManager.wineDebugChannels = "err,loaddll,vulkan"
+        // Diagnostics are opt-in: tracing Wine's Vulkan calls and DXVK's log slow the game down a lot. Create an empty
+        // file named mali_debug in <external files> (adb shell touch /sdcard/Android/data/app.wowforever/files/mali_debug)
+        // to write Wine's output to <external files>/wine_logs/wine_debug.log and DXVK's log to its cache folder.
+        val debug = maliDebugEnabled(context)
+        PrefManager.enableWineDebug = debug
+        if (debug) PrefManager.wineDebugChannels = "err,loaddll,vulkan"
     }
 
     onStatus("Configuring ${gpu.label} container...")
     val containerManager = ContainerManager(context)
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context))
+    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), gpu.mali && maliDebugEnabled(context))
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
@@ -1324,11 +1327,21 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
     return CONTAINER_ID
 }
 
-private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
+private fun maliDebugEnabled(context: Context): Boolean =
+    runCatching { File(context.getExternalFilesDir(null), "mali_debug").exists() }.getOrDefault(false)
+
+private fun containerConfig(
+    gameRoot: File,
+    gpu: GpuProfile,
+    screenSize: String,
+    identity: WowMachineIdentity,
+    debug: Boolean = false,
+): JSONObject {
     val samsungEnv =
         if (!gpu.mali && Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     // Mali diagnostics: DXVK writes its log (device selection, missing Vulkan features) to the container's cache dir.
-    val maliEnv = if (gpu.mali) " DXVK_LOG_LEVEL=info DXVK_LOG_PATH=/data/data/app.wowforever/files/imagefs/home/xuser/.cache" else ""
+    val maliEnv =
+        if (gpu.mali && debug) " DXVK_LOG_LEVEL=info DXVK_LOG_PATH=/data/data/app.wowforever/files/imagefs/home/xuser/.cache" else ""
     val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$maliEnv"
     return JSONObject().apply {
         put("id", CONTAINER_ID)
