@@ -1203,9 +1203,19 @@ private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
-private data class GpuProfile(val driver: String, val tuDebug: String, val screenSize: String, val label: String, val edition: String) {
+private data class GpuProfile(
+    val driver: String,
+    val tuDebug: String,
+    val screenSize: String,
+    val label: String,
+    val edition: String,
+    val mali: Boolean = false,
+) {
     companion object {
         fun detect(context: Context) = when {
+            // Unofficial Mali experiment: system Vulkan driver through the wrapper, no Turnip (Adreno only).
+            isMaliDevice(context) ->
+                GpuProfile("System", "", "1280x720", "Mali", "Mali (unofficial, experimental)", mali = true)
             isAdreno8xxDevice(context) ->
                 GpuProfile(ADRENO_8XX_DRIVER, "noconform,sysmem", "1280x720", "Adreno 8xx", "Snapdragon 8 Elite / Adreno 8xx")
             // Same driver and flags as the Adreno 740: the bundled Turnip (Mesa 26.2) knows the FD750 chip id.
@@ -1215,6 +1225,9 @@ private data class GpuProfile(val driver: String, val tuDebug: String, val scree
             else ->
                 GpuProfile(DEFAULT_DRIVER, "noconform", "1920x1080", "Adreno 740", "Snapdragon 8 Series / Adreno 740")
         }
+
+        private fun isMaliDevice(context: Context): Boolean =
+            runCatching { GPUInformation.getRenderer(context).contains("mali", ignoreCase = true) }.getOrDefault(false)
 
         private fun isAdreno750Device(context: Context): Boolean {
             if (GPUInformation.isAdreno750(context)) return true
@@ -1302,16 +1315,25 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 }
 
 private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String, identity: WowMachineIdentity): JSONObject {
-    val samsungEnv = if (Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv"
+    val samsungEnv =
+        if (!gpu.mali && Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
+    // Mali diagnostics: DXVK writes its log (device selection, missing Vulkan features) to the container's cache dir.
+    val maliEnv = if (gpu.mali) " DXVK_LOG_LEVEL=info DXVK_LOG_PATH=/data/data/app.wowforever/files/imagefs/home/xuser/.cache" else ""
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$maliEnv"
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
         put("screenSize", screenSize)
         put("envVars", envVars)
-        put("graphicsDriver", "Wrapper")
-        put("graphicsDriverVersion", gpu.driver)
-        put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        if (gpu.mali) {
+            put("graphicsDriver", "Wrapper-gamenative")
+            put("graphicsDriverVersion", "System")
+            put("graphicsDriverConfig", "version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low")
+        } else {
+            put("graphicsDriver", "Wrapper")
+            put("graphicsDriverVersion", gpu.driver)
+            put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
+        }
         put("displayRenderer", "vulkan")
         put("dxwrapper", "dxvk-$DXVK_VERSION-1")
         put("dxwrapperConfig", "version=$DXVK_VERSION-1")
