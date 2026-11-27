@@ -58,6 +58,10 @@ jobs:
           strip = 'llvm-strip'
           windres = 'aarch64-w64-mingw32-windres'
 
+          [built-in options]
+          # Newer libc++ no longer includes <algorithm>/<cstdint> transitively; DXVK 1.10 relies on that.
+          cpp_args = ['-include', 'algorithm', '-include', 'cstdint', '-include', 'cstring']
+
           [properties]
           needs_exe_wrapper = true
 
