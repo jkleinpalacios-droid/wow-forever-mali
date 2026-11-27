@@ -1206,6 +1206,7 @@ private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
 // Unofficial Mali build: DXVK 1.10.3 cross-compiled for ARM64 in CI (tools/dxvk-arm64); needs only Vulkan 1.1.
 private const val MALI_DXVK_VERSION = "1.10.3-arm64-mali"
+private const val MALI_VRAM_MB = 2048
 
 private data class GpuProfile(
     val driver: String,
@@ -1375,7 +1376,7 @@ private fun containerConfig(
         if (gpu.mali) {
             put("graphicsDriver", "Wrapper-gamenative")
             put("graphicsDriverVersion", "System")
-            put("graphicsDriverConfig", mergeConfigKeys("version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low", maliGdcExtra))
+            put("graphicsDriverConfig", mergeConfigKeys("version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low,maxDeviceMemory=$MALI_VRAM_MB", maliGdcExtra))
         } else {
             put("graphicsDriver", "Wrapper")
             put("graphicsDriverVersion", gpu.driver)
@@ -1384,7 +1385,9 @@ private fun containerConfig(
         put("displayRenderer", "vulkan")
         val dxvkVersion = if (gpu.mali) MALI_DXVK_VERSION else DXVK_VERSION
         put("dxwrapper", "dxvk-$dxvkVersion-1")
-        put("dxwrapperConfig", "version=$dxvkVersion-1")
+        // Mali shares system RAM and the wrapper reports ~11 GB of "video memory", so the game sizes its caches for
+        // that and Android's low memory killer ends the app. Report a smaller budget instead.
+        put("dxwrapperConfig", "version=$dxvkVersion-1" + if (gpu.mali) ",maxDeviceMemory=$MALI_VRAM_MB" else "")
         put("wineVersion", "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
         put("fexcoreVersion", "2609-0")
