@@ -87,7 +87,7 @@ jobs:
             rm -f vulkan-1.lib
             llvm-dlltool -m arm64 -d vulkan-1.def -D vulkan-1.dll -l vulkan-1.lib
             echo "--- variant $variant"; llvm-nm vulkan-1.lib || true
-            if llvm-nm vulkan-1.lib | grep -q ' vkGetInstanceProcAddr'; then ok=1; cp vulkan-1.lib dxvk/lib/vulkan-1.lib; break; fi
+            if llvm-nm vulkan-1.lib | grep -q ' vkGetInstanceProcAddr'; then ok=1; cp vulkan-1.lib dxvk/lib/vulkan-1.lib; cp vulkan-1.lib dxvk/lib32/vulkan-1.lib; break; fi
           done
           [ "$ok" = 1 ] || { echo "::error::could not build an ARM64 import lib"; exit 1; }
           ls -la dxvk/lib
