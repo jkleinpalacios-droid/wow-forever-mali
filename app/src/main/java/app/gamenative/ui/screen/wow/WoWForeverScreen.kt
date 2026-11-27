@@ -1204,6 +1204,9 @@ private const val ADRENO_8XX_DRIVER = "Turnip-V32-RP6sched"
 private const val PROTON_VERSION = "proton-11.0-90624-arm64ec"
 private const val DXVK_VERSION = "2.4.1-wow-aarch64-test"
 
+// Unofficial Mali build: DXVK 1.10.3 cross-compiled for ARM64 in CI (tools/dxvk-arm64); needs only Vulkan 1.1.
+private const val MALI_DXVK_VERSION = "1.10.3-arm64-mali"
+
 private data class GpuProfile(
     val driver: String,
     val tuDebug: String,
@@ -1270,7 +1273,7 @@ internal fun fitScreenSize(baseSize: String, windowWidth: Int, windowHeight: Int
 }
 
 private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, screenSize: String, onStatus: (String) -> Unit): String {
-    installBundledComponents(context, onStatus)
+    installBundledComponents(context, gpu.mali, onStatus)
 
     check(File(gameRoot, BUILD_INFO).exists()) { "Missing $BUILD_INFO in $gameRoot. Copy it from your WoW install." }
     try {
@@ -1342,8 +1345,9 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
             put("graphicsDriverConfig", "version=${gpu.driver},adrenotoolsTurnip=1,resourceType=buffer,bcnEmulation=auto,quality=high")
         }
         put("displayRenderer", "vulkan")
-        put("dxwrapper", "dxvk-$DXVK_VERSION-1")
-        put("dxwrapperConfig", "version=$DXVK_VERSION-1")
+        val dxvkVersion = if (gpu.mali) MALI_DXVK_VERSION else DXVK_VERSION
+        put("dxwrapper", "dxvk-$dxvkVersion-1")
+        put("dxwrapperConfig", "version=$dxvkVersion-1")
         put("wineVersion", "$PROTON_VERSION-1")
         put("containerVariant", "bionic")
         put("fexcoreVersion", "2609-0")
@@ -1442,7 +1446,7 @@ private fun portalOf(root: File) =
         ?: WowClientDownloader.readBuildInfo(File(root, BUILD_INFO))?.get("Branch")?.takeIf { it.isNotBlank() }?.uppercase()
         ?: WowClientDownloader.defaultBranch().uppercase()
 
-private fun installBundledComponents(context: Context, onStatus: (String) -> Unit) {
+private fun installBundledComponents(context: Context, mali: Boolean, onStatus: (String) -> Unit) {
     installDriver(context, DEFAULT_DRIVER, "turnip-wow-scheduler-test.zip", onStatus)
     installDriver(context, ADRENO_8XX_DRIVER, "turnip-V32-RP6sched.zip", onStatus)
 
@@ -1460,6 +1464,14 @@ private fun installBundledComponents(context: Context, onStatus: (String) -> Uni
     if (!File(dxvkDir, "profile.json").exists()) {
         onStatus("Extracting DXVK ARM64...")
         if (!extractBundledWcp(context, "dxvk-$DXVK_VERSION.wcp", dxvkDir)) Timber.e("Failed to extract DXVK")
+    }
+
+    if (mali) {
+        val maliDxvkDir = File(ContentsManager.getContentTypeDir(context, ContentProfile.ContentType.CONTENT_TYPE_DXVK), MALI_DXVK_VERSION)
+        if (!File(maliDxvkDir, "profile.json").exists()) {
+            onStatus("Extracting DXVK 1.10 ARM64 (Mali)...")
+            if (!extractBundledWcp(context, "dxvk-$MALI_DXVK_VERSION.wcp", maliDxvkDir)) Timber.e("Failed to extract Mali DXVK")
+        }
     }
 
     ImageFsInstaller.ensureBionicLib(context, ImageFs.find(context).rootDir)
