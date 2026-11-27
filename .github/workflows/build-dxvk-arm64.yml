@@ -77,10 +77,20 @@ jobs:
       # DXVK ships an x86-64 import library for vulkan-1.dll; replace it with an ARM64 one.
       - name: ARM64 vulkan-1 import library
         run: |
-          printf 'LIBRARY vulkan-1.dll\nEXPORTS\nvkGetInstanceProcAddr\n' > vulkan-1.def
-          llvm-dlltool -m arm64 -d vulkan-1.def -l dxvk/lib/vulkan-1.lib
+          ok=0
+          for variant in 1 2 3; do
+            case $variant in
+              1) printf 'LIBRARY "vulkan-1.dll"\nEXPORTS\n    vkGetInstanceProcAddr\n' > vulkan-1.def ;;
+              2) printf 'LIBRARY vulkan-1.dll\nEXPORTS\n    vkGetInstanceProcAddr @1\n' > vulkan-1.def ;;
+              3) printf 'EXPORTS\n    vkGetInstanceProcAddr\n' > vulkan-1.def ;;
+            esac
+            rm -f vulkan-1.lib
+            llvm-dlltool -m arm64 -d vulkan-1.def -D vulkan-1.dll -l vulkan-1.lib
+            echo "--- variant $variant"; llvm-nm vulkan-1.lib || true
+            if llvm-nm vulkan-1.lib | grep -q ' vkGetInstanceProcAddr'; then ok=1; cp vulkan-1.lib dxvk/lib/vulkan-1.lib; break; fi
+          done
+          [ "$ok" = 1 ] || { echo "::error::could not build an ARM64 import lib"; exit 1; }
           ls -la dxvk/lib
-          llvm-nm dxvk/lib/vulkan-1.lib | head -10
 
       - name: Configure
         working-directory: dxvk
