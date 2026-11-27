@@ -1335,7 +1335,7 @@ private fun containerConfig(gameRoot: File, gpu: GpuProfile, screenSize: String,
         if (gpu.mali) {
             put("graphicsDriver", "Wrapper-gamenative")
             put("graphicsDriverVersion", "System")
-            put("graphicsDriverConfig", "version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low")
+            put("graphicsDriverConfig", "version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low,vulkanVersion=1.3")
         } else {
             put("graphicsDriver", "Wrapper")
             put("graphicsDriverVersion", gpu.driver)
