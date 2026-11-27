@@ -71,6 +71,25 @@ jobs:
             echo "::warning::No DEBUG_KEYSTORE_BASE64 secret: using a random debug key"
           fi
 
+      # Unofficial Mali support: DXVK 1.10 (Vulkan 1.1) cross-compiled for ARM64, bundled into the APK.
+      - name: Build DXVK 1.10 for ARM64 (Mali)
+        env:
+          LLVM_MINGW: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
+          LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq meson ninja-build glslang-tools zstd > /dev/null
+          if [ ! -d "$RUNNER_TEMP/$LLVM_MINGW" ]; then
+            curl -fsSL -o "$RUNNER_TEMP/llvm-mingw.tar.xz" \
+              "https://github.com/mstorsjo/llvm-mingw/releases/download/20261104/$LLVM_MINGW.tar.xz"
+            echo "$LLVM_MINGW_SHA256  $RUNNER_TEMP/llvm-mingw.tar.xz" | sha256sum -c -
+            tar -xJf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$RUNNER_TEMP"
+          fi
+          export PATH="$RUNNER_TEMP/$LLVM_MINGW/bin:$PATH"
+          mkdir -p "$RUNNER_TEMP/dxvk-out"
+          bash tools/dxvk-arm64/build.sh v1.10.3 "$RUNNER_TEMP/dxvk-work" "$RUNNER_TEMP/dxvk-out"
+          cp "$RUNNER_TEMP/dxvk-out/dxvk-1.10.3-arm64-mali.wcp" app/src/main/assets/bundled_components/
+
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
