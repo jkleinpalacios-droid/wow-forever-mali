@@ -65,7 +65,15 @@ object AppUpdater {
         null
     }.getOrNull()
 
+    /**
+     * Unofficial fork: the in-app updater is disabled. It used to query the original author's GitHub releases and
+     * offer to install the APK found there, which would replace this build with one we did not produce. Update this
+     * fork by installing a build from its own releases/Actions instead.
+     */
+    const val ENABLED = false
+
     suspend fun check(currentVersion: String = BuildConfig.VERSION_NAME): Release? = withContext(Dispatchers.IO) {
+        if (!ENABLED) return@withContext null
         runCatching {
             val request = Request.Builder()
                 .url(RELEASES_URL)
