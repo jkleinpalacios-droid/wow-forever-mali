@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import app.gamenative.BuildConfig
 import app.gamenative.PluviaApp
+import app.gamenative.PrefManager
 import app.gamenative.events.AndroidEvent
 import app.gamenative.ui.screen.wow.WowClientDownloader.BUILD_INFO
 import app.gamenative.ui.screen.wow.WowClientDownloader.EXE_NAME
@@ -1287,6 +1288,12 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
             if (!arm64Exe.exists()) throw IllegalStateException("Couldn't download $EXE_NAME: ${e.message}", e)
             Timber.w(e, "Client update check failed, launching the existing $EXE_NAME")
         }
+    }
+
+    if (gpu.mali) {
+        // Experimental profile: write Wine's debug output to <external files>/wine_logs/wine_debug.log.
+        PrefManager.enableWineDebug = true
+        PrefManager.wineDebugChannels = "err,loaddll,vulkan"
     }
 
     onStatus("Configuring ${gpu.label} container...")
