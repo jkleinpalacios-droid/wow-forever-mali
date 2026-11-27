@@ -41,6 +41,13 @@ jobs:
           git clone --branch "$REF" --depth 1 --recurse-submodules --shallow-submodules https://github.com/doitsujin/dxvk.git dxvk
           git -C dxvk log -1 --format='%H %s'
 
+      - uses: actions/checkout@v4
+        with:
+          path: fork
+
+      - name: Patch DXVK for aarch64
+        run: python3 fork/tools/dxvk-arm64/patch_dxvk.py dxvk
+
       - name: Write cross file
         run: |
           cat > cross-arm64.txt <<'EOF'
@@ -66,12 +73,15 @@ jobs:
       - name: Configure
         working-directory: dxvk
         run: |
+          set -o pipefail
           meson setup --cross-file ../cross-arm64.txt --buildtype release --strip \
             -Denable_d3d9=false -Denable_d3d10=false --prefix "$PWD/../out" build 2>&1 | tail -40
 
       - name: Build
         working-directory: dxvk
-        run: ninja -C build -j"$(nproc)" 2>&1 | tail -60
+        run: |
+          set -o pipefail
+          ninja -C build -j"$(nproc)" 2>&1 | tail -60
 
       - name: Collect and check
         run: |
