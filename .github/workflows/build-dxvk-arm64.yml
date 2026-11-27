@@ -74,6 +74,13 @@ jobs:
           sed -i 's/^          //' cross-arm64.txt
           cat cross-arm64.txt
 
+      # DXVK ships an x86-64 import library for vulkan-1.dll; replace it with an ARM64 one.
+      - name: ARM64 vulkan-1 import library
+        run: |
+          printf 'LIBRARY vulkan-1.dll\nEXPORTS\nvkGetInstanceProcAddr\n' > vulkan-1.def
+          llvm-dlltool -m arm64 -d vulkan-1.def -l dxvk/lib/vulkan-1.lib
+          ls -la dxvk/lib
+
       - name: Configure
         working-directory: dxvk
         run: |
