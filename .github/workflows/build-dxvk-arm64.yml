@@ -1,5 +1,5 @@
 # Experiment: cross-compile DXVK 1.10.x (needs only Vulkan 1.1) for Windows ARM64 with llvm-mingw.
-# Output: d3d11.dll + dxgi.dll as an artifact. Run by hand; the DXVK ref is an input.
+# Output: d3d11.dll, dxgi.dll and a Winlator content package as an artifact. Run by hand.
 name: Build DXVK ARM64 (experiment)
 
 on:
@@ -20,11 +20,12 @@ jobs:
       LLVM_MINGW: llvm-mingw-20261104-ucrt-ubuntu-22.04-x86_64
       LLVM_MINGW_SHA256: 919380403de87dca3c581c2053230cd298af5e891286628ba0613b7fed370926
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install build tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq meson ninja-build glslang-tools python3-pip git > /dev/null
-          meson --version
+          sudo apt-get install -y -qq meson ninja-build glslang-tools zstd git > /dev/null
 
       - name: Get llvm-mingw
         run: |
@@ -34,91 +35,13 @@ jobs:
           tar -xJf "$RUNNER_TEMP/llvm-mingw.tar.xz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/$LLVM_MINGW/bin" >> "$GITHUB_PATH"
 
-      - name: Clone DXVK
+      - name: Build DXVK for ARM64
         env:
           REF: ${{ inputs.ref }}
-        run: |
-          git clone --branch "$REF" --depth 1 --recurse-submodules --shallow-submodules https://github.com/doitsujin/dxvk.git dxvk
-          git -C dxvk log -1 --format='%H %s'
-
-      - uses: actions/checkout@v4
-        with:
-          path: fork
-
-      - name: Patch DXVK for aarch64
-        run: python3 fork/tools/dxvk-arm64/patch_dxvk.py dxvk
-
-      - name: Write cross file
-        run: |
-          cat > cross-arm64.txt <<'EOF'
-          [binaries]
-          c = 'aarch64-w64-mingw32-clang'
-          cpp = 'aarch64-w64-mingw32-clang++'
-          ar = 'llvm-ar'
-          strip = 'llvm-strip'
-          windres = 'aarch64-w64-mingw32-windres'
-
-          [built-in options]
-          # Newer libc++ no longer includes <algorithm>/<cstdint> transitively; DXVK 1.10 relies on that.
-          cpp_args = ['-include', 'algorithm', '-include', 'cstdint', '-include', 'cstring']
-
-          [properties]
-          needs_exe_wrapper = true
-
-          [host_machine]
-          system = 'windows'
-          cpu_family = 'aarch64'
-          cpu = 'aarch64'
-          endian = 'little'
-          EOF
-          sed -i 's/^          //' cross-arm64.txt
-          cat cross-arm64.txt
-
-      # DXVK ships an x86-64 import library for vulkan-1.dll; replace it with an ARM64 one.
-      - name: ARM64 vulkan-1 import library
-        run: |
-          ok=0
-          for variant in 1 2 3; do
-            case $variant in
-              1) printf 'LIBRARY "vulkan-1.dll"\nEXPORTS\n    vkGetInstanceProcAddr\n' > vulkan-1.def ;;
-              2) printf 'LIBRARY vulkan-1.dll\nEXPORTS\n    vkGetInstanceProcAddr @1\n' > vulkan-1.def ;;
-              3) printf 'EXPORTS\n    vkGetInstanceProcAddr\n' > vulkan-1.def ;;
-            esac
-            rm -f vulkan-1.lib
-            llvm-dlltool -m arm64 -d vulkan-1.def -D vulkan-1.dll -l vulkan-1.lib
-            echo "--- variant $variant"; llvm-nm vulkan-1.lib || true
-            if llvm-nm vulkan-1.lib | grep -q ' vkGetInstanceProcAddr'; then ok=1; cp vulkan-1.lib dxvk/lib/vulkan-1.lib; cp vulkan-1.lib dxvk/lib32/vulkan-1.lib; break; fi
-          done
-          [ "$ok" = 1 ] || { echo "::error::could not build an ARM64 import lib"; exit 1; }
-          ls -la dxvk/lib
-
-      - name: Configure
-        working-directory: dxvk
-        run: |
-          set -o pipefail
-          meson setup --cross-file ../cross-arm64.txt --buildtype release --strip \
-            -Denable_d3d9=false -Denable_d3d10=false --prefix "$PWD/../out" build 2>&1 | tail -40
-
-      - name: Build
-        working-directory: dxvk
-        run: |
-          ninja -C build -k 0 -j"$(nproc)" > build.log 2>&1 || {
-            grep -E -A6 'error: undefined' build.log | head -30
-            grep -E 'FAILED' -A1 build.log | cut -c1-900 | head -12
-            grep -E 'error:' build.log | sort | uniq -c | sort -rn | head -20
-            exit 1
-          }
-
-      - name: Collect and check
-        run: |
-          mkdir -p dist
-          find dxvk/build -name 'd3d11.dll' -o -name 'dxgi.dll' | while read f; do cp "$f" dist/; done
-          ls -la dist
-          for f in dist/*.dll; do echo "== $f"; llvm-objdump -f "$f" | head -4; done
-          sha256sum dist/*.dll
+        run: bash tools/dxvk-arm64/build.sh "$REF" "$RUNNER_TEMP/dxvk-work" "$PWD/dist"
 
       - uses: actions/upload-artifact@v4
         with:
           name: dxvk-arm64-${{ inputs.ref }}
-          path: dist/*.dll
+          path: dist/*
           retention-days: 14
