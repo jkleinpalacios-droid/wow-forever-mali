@@ -1304,7 +1304,8 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 
     onStatus("Configuring ${gpu.label} container...")
     val containerManager = ContainerManager(context)
-    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), gpu.mali && maliDebugEnabled(context))
+    val config = containerConfig(gameRoot, gpu, screenSize, WowMachineIdentity.load(context), gpu.mali && maliDebugEnabled(context),
+        if (gpu.mali) maliOverride(context, "mali_env") else "", if (gpu.mali) maliOverride(context, "mali_gdc") else "")
     val container = containerManager.getContainerById(CONTAINER_ID)
     if (container == null) {
         onStatus("Creating prefix environment (first boot)...")
@@ -1330,19 +1331,33 @@ private fun prepareLaunch(context: Context, gameRoot: File, gpu: GpuProfile, scr
 private fun maliDebugEnabled(context: Context): Boolean =
     runCatching { File(context.getExternalFilesDir(null), "mali_debug").exists() }.getOrDefault(false)
 
+/**
+ * Tuning experiments without rebuilding: one line of text in <external files>/<name> (push it with adb).
+ * mali_env: extra environment variables for the container ("A=1 B=2"). mali_gdc: extra graphics driver config
+ * keys (",bcnEmulation=none"). Only plain characters are accepted, so the file can't smuggle in anything else.
+ */
+private fun maliOverride(context: Context, name: String): String =
+    runCatching { File(context.getExternalFilesDir(null), name).takeIf { it.isFile }?.readText()?.trim().orEmpty() }
+        .getOrDefault("")
+        .takeIf { value -> value.length <= 400 && value.all { it.isLetterOrDigit() || it in "_=.,:/- " } }
+        .orEmpty()
+
 private fun containerConfig(
     gameRoot: File,
     gpu: GpuProfile,
     screenSize: String,
     identity: WowMachineIdentity,
     debug: Boolean = false,
+    maliEnvExtra: String = "",
+    maliGdcExtra: String = "",
 ): JSONObject {
     val samsungEnv =
         if (!gpu.mali && Build.MANUFACTURER.equals("samsung", ignoreCase = true)) " FD_DEV_FEATURES=enable_tp_ubwc_flag_hint=1" else ""
     // Mali diagnostics: DXVK writes its log (device selection, missing Vulkan features) to the container's cache dir.
     val maliEnv =
         if (gpu.mali && debug) " DXVK_LOG_LEVEL=info DXVK_LOG_PATH=/data/data/app.wowforever/files/imagefs/home/xuser/.cache" else ""
-    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$maliEnv"
+    val envVars = "WRAPPER_MAX_IMAGE_COUNT=0 ZINK_DESCRIPTORS=lazy ZINK_DEBUG=compact,deck_emu MESA_SHADER_CACHE_DISABLE=false MESA_SHADER_CACHE_MAX_SIZE=512MB mesa_glthread=true WINEESYNC=0 MESA_VK_WSI_PRESENT_MODE=mailbox TU_DEBUG=${gpu.tuDebug} VKD3D_SHADER_MODEL=6_0 PULSE_LATENCY_MSEC=144 ${WowMachineIdentity.HOSTNAME_ENV}=${identity.computerName}$samsungEnv$maliEnv" +
+        (if (gpu.mali && maliEnvExtra.isNotBlank()) " $maliEnvExtra" else "")
     return JSONObject().apply {
         put("id", CONTAINER_ID)
         put("name", "WoW Forever")
@@ -1351,7 +1366,7 @@ private fun containerConfig(
         if (gpu.mali) {
             put("graphicsDriver", "Wrapper-gamenative")
             put("graphicsDriverVersion", "System")
-            put("graphicsDriverConfig", "version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low")
+            put("graphicsDriverConfig", "version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low$maliGdcExtra")
         } else {
             put("graphicsDriver", "Wrapper")
             put("graphicsDriverVersion", gpu.driver)
