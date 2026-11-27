@@ -1342,6 +1342,15 @@ private fun maliOverride(context: Context, name: String): String =
         .takeIf { value -> value.length <= 400 && value.all { it.isLetterOrDigit() || it in "_=.,:/- " } }
         .orEmpty()
 
+/** Applies "k=v,k2=v2" overrides on top of a "k=v,..." base: an overridden key replaces the base value (first wins when parsed). */
+private fun mergeConfigKeys(base: String, extra: String): String {
+    val overrides = extra.split(',').map { it.trim() }.filter { it.contains('=') }
+    if (overrides.isEmpty()) return base
+    val overridden = overrides.map { it.substringBefore('=') }.toSet()
+    val kept = base.split(',').filter { it.substringBefore('=') !in overridden }
+    return (kept + overrides).joinToString(",")
+}
+
 private fun containerConfig(
     gameRoot: File,
     gpu: GpuProfile,
@@ -1366,7 +1375,7 @@ private fun containerConfig(
         if (gpu.mali) {
             put("graphicsDriver", "Wrapper-gamenative")
             put("graphicsDriverVersion", "System")
-            put("graphicsDriverConfig", "version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low$maliGdcExtra")
+            put("graphicsDriverConfig", mergeConfigKeys("version=System,adrenotoolsTurnip=0,resourceType=buffer,bcnEmulation=auto,quality=low", maliGdcExtra))
         } else {
             put("graphicsDriver", "Wrapper")
             put("graphicsDriverVersion", gpu.driver)
