@@ -51,6 +51,14 @@ jobs:
           sh tools/wow-session-bridge/build.sh "$RUNNER_TEMP/$LLVM_MINGW/bin/aarch64-w64-mingw32-clang" \
             app/src/main/assets/wow-session-bridge.exe
 
+      # Keep the same debug key between runs so new APKs install over the previous one (cache can expire after ~7 idle days).
+      - name: Restore debug keystore
+        id: dbgkey
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: debug-keystore-v1
+
       - name: Write local.properties
         run: echo "sdk.dir=$ANDROID_HOME" > local.properties
 
