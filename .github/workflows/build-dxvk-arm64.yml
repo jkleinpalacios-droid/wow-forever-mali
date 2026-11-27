@@ -80,6 +80,7 @@ jobs:
           printf 'LIBRARY vulkan-1.dll\nEXPORTS\nvkGetInstanceProcAddr\n' > vulkan-1.def
           llvm-dlltool -m arm64 -d vulkan-1.def -l dxvk/lib/vulkan-1.lib
           ls -la dxvk/lib
+          llvm-nm dxvk/lib/vulkan-1.lib | head -10
 
       - name: Configure
         working-directory: dxvk
@@ -92,7 +93,9 @@ jobs:
         working-directory: dxvk
         run: |
           ninja -C build -k 0 -j"$(nproc)" > build.log 2>&1 || {
-            grep -E 'error:|FAILED|undefined' build.log | sort | uniq -c | sort -rn | head -60
+            grep -E -A6 'error: undefined' build.log | head -30
+            grep -E 'FAILED' -A1 build.log | cut -c1-900 | head -12
+            grep -E 'error:' build.log | sort | uniq -c | sort -rn | head -20
             exit 1
           }
 
